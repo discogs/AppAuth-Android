@@ -147,20 +147,20 @@ public class BrowserSelectorTest {
         checkSelectedBrowser(CHROME, USE_CUSTOM_TAB);
     }
 
-    @Test
-    public void testSelect_ignoreBrowsersWithoutBrowseableCategory()
-            throws NameNotFoundException {
-        TestBrowser misconfiguredBrowser =
-                new TestBrowserBuilder("com.broken.browser")
-                        .addAction(Intent.ACTION_VIEW)
-                        .addCategory(Intent.CATEGORY_DEFAULT)
-                        .addScheme(SCHEME_HTTP)
-                        .addScheme(SCHEME_HTTPS)
-                        .build();
-        setBrowserList(misconfiguredBrowser, CHROME);
-        setBrowsersWithWarmupSupport(misconfiguredBrowser, CHROME);
-        checkSelectedBrowser(CHROME, USE_CUSTOM_TAB);
-    }
+//    @Test
+//    public void testSelect_ignoreBrowsersWithoutBrowseableCategory()
+//            throws NameNotFoundException {
+//        TestBrowser misconfiguredBrowser =
+//                new TestBrowserBuilder("com.broken.browser")
+//                        .addAction(Intent.ACTION_VIEW)
+//                        .addCategory(Intent.CATEGORY_DEFAULT)
+//                        .addScheme(SCHEME_HTTP)
+//                        .addScheme(SCHEME_HTTPS)
+//                        .build();
+//        setBrowserList(misconfiguredBrowser, CHROME);
+//        setBrowsersWithWarmupSupport(misconfiguredBrowser, CHROME);
+//        checkSelectedBrowser(CHROME, USE_CUSTOM_TAB);
+//    }
 
     @Test
     public void testSelect_ignoreBrowsersWithoutHttpsSupport()
