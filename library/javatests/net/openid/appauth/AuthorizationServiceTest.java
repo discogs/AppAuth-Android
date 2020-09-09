@@ -50,7 +50,6 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.util.Map;
-import java.util.concurrent.Executor;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 
@@ -123,13 +122,6 @@ public class AuthorizationServiceTest {
     @Mock Context mContext;
     @Mock CustomTabsClient mClient;
     @Mock CustomTabManager mCustomTabManager;
-
-    private Executor mExecutor = new Executor() {
-        @Override
-        public void execute(Runnable runnable) {
-            runnable.run();
-        }
-    };
 
     @Before
     @SuppressWarnings("ResourceType")
@@ -244,7 +236,7 @@ public class AuthorizationServiceTest {
         when(mHttpConnection.getRequestProperty("Accept")).thenReturn(null);
         when(mHttpConnection.getResponseCode()).thenReturn(HttpURLConnection.HTTP_OK);
         TokenRequest request = getTestAuthCodeExchangeRequest();
-        mService.performTokenRequest(request, mExecutor, mAuthCallback);
+        mService.performTokenRequest(request, mAuthCallback);
         mAuthCallback.waitForCallback();
         assertTokenResponse(mAuthCallback.response, request);
         String postBody = mOutputStream.toString();
@@ -273,7 +265,7 @@ public class AuthorizationServiceTest {
         TokenRequest request = getTestAuthCodeExchangeRequestBuilder()
                 .setNonce(TEST_NONCE)
                 .build();
-        mService.performTokenRequest(request, mExecutor, mAuthCallback);
+        mService.performTokenRequest(request, mAuthCallback);
         mAuthCallback.waitForCallback();
         assertTokenResponse(mAuthCallback.response, request, idToken);
     }
@@ -287,7 +279,7 @@ public class AuthorizationServiceTest {
         TokenRequest request = getTestAuthCodeExchangeRequest();
 
         ClientSecretBasic clientAuth = new ClientSecretBasic("SUPER_SECRET");
-        mService.performTokenRequest(request, clientAuth, mExecutor, mAuthCallback);
+        mService.performTokenRequest(request, clientAuth, mAuthCallback);
         mAuthCallback.waitForCallback();
         assertTokenResponse(mAuthCallback.response, request);
         String postBody = mOutputStream.toString();
@@ -323,7 +315,7 @@ public class AuthorizationServiceTest {
         when(mHttpConnection.getResponseCode()).thenReturn(HttpURLConnection.HTTP_OK);
         when(mHttpConnection.getInputStream()).thenReturn(is);
         TokenRequest request = getTestAuthCodeExchangeRequest();
-        mService.performTokenRequest(request, csb, mExecutor, mAuthCallback);
+        mService.performTokenRequest(request, csb, mAuthCallback);
         mAuthCallback.waitForCallback();
         assertTokenResponse(mAuthCallback.response, request);
         String postBody = mOutputStream.toString();
@@ -339,7 +331,7 @@ public class AuthorizationServiceTest {
         when(mHttpConnection.getInputStream()).thenReturn(is);
         when(mHttpConnection.getResponseCode()).thenReturn(HttpURLConnection.HTTP_OK);
         TokenRequest request = getTestAuthCodeExchangeRequest();
-        mService.performTokenRequest(request, csp, mExecutor, mAuthCallback);
+        mService.performTokenRequest(request, csp, mAuthCallback);
         mAuthCallback.waitForCallback();
         assertTokenResponse(mAuthCallback.response, request);
 
@@ -356,7 +348,7 @@ public class AuthorizationServiceTest {
         when(mHttpConnection.getErrorStream()).thenReturn(is);
         when(mHttpConnection.getResponseCode()).thenReturn(HttpURLConnection.HTTP_BAD_REQUEST);
         TokenRequest request = getTestAuthCodeExchangeRequest();
-        mService.performTokenRequest(request, csp, mExecutor, mAuthCallback);
+        mService.performTokenRequest(request, csp, mAuthCallback);
         mAuthCallback.waitForCallback();
         assertInvalidGrant(mAuthCallback.error);
     }
@@ -368,7 +360,7 @@ public class AuthorizationServiceTest {
         when(mHttpConnection.getErrorStream()).thenReturn(is);
         when(mHttpConnection.getResponseCode()).thenReturn(199);
         TokenRequest request = getTestAuthCodeExchangeRequest();
-        mService.performTokenRequest(request, csp, mExecutor, mAuthCallback);
+        mService.performTokenRequest(request, csp, mAuthCallback);
         mAuthCallback.waitForCallback();
         assertInvalidGrant(mAuthCallback.error);
     }
@@ -380,7 +372,7 @@ public class AuthorizationServiceTest {
         when(mHttpConnection.getErrorStream()).thenReturn(is);
         when(mHttpConnection.getResponseCode()).thenReturn(HttpURLConnection.HTTP_BAD_REQUEST);
         TokenRequest request = getTestAuthCodeExchangeRequest();
-        mService.performTokenRequest(request, csp, mExecutor, mAuthCallback);
+        mService.performTokenRequest(request, csp, mAuthCallback);
         mAuthCallback.waitForCallback();
         assertInvalidGrantWithNoDescription(mAuthCallback.error);
     }
@@ -390,7 +382,7 @@ public class AuthorizationServiceTest {
         Exception ex = new IOException();
         when(mHttpConnection.getInputStream()).thenThrow(ex);
         when(mHttpConnection.getResponseCode()).thenReturn(HttpURLConnection.HTTP_OK);
-        mService.performTokenRequest(getTestAuthCodeExchangeRequest(), mExecutor, mAuthCallback);
+        mService.performTokenRequest(getTestAuthCodeExchangeRequest(), mAuthCallback);
         mAuthCallback.waitForCallback();
         assertNotNull(mAuthCallback.error);
         assertEquals(GeneralErrors.NETWORK_ERROR, mAuthCallback.error);

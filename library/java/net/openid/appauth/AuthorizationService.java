@@ -423,15 +423,13 @@ public class AuthorizationService {
     }
 
     private static class TokenRequestTask
-            extends AsyncTask<Void, Void, JSONObject> {
+            extends AsyncTask<Void, Void, Void> {
 
         private TokenRequest mRequest;
         private ClientAuthentication mClientAuthentication;
         private final ConnectionBuilder mConnectionBuilder;
         private TokenResponseCallback mCallback;
         private Clock mClock;
-
-        private AuthorizationException mException;
 
         TokenRequestTask(TokenRequest request,
                          @NonNull ClientAuthentication clientAuthentication,
@@ -446,7 +444,18 @@ public class AuthorizationService {
         }
 
         @Override
-        protected JSONObject doInBackground(Void... voids) {
+        protected Void doInBackground(Void... voids) {
+            try {
+                JSONObject json = fetchToken();
+                TokenResponse response = parseToken(json);
+                mCallback.onTokenRequestCompleted(response, null);
+            } catch (AuthorizationException ex) {
+                mCallback.onTokenRequestCompleted(null, ex);
+            }
+            return null;
+        }
+
+        private JSONObject fetchToken() throws AuthorizationException {
             InputStream is = null;
             try {
                 HttpURLConnection conn = mConnectionBuilder.openConnection(
@@ -488,77 +497,59 @@ public class AuthorizationService {
                 return new JSONObject(response);
             } catch (IOException ex) {
                 Logger.debugWithStack(ex, "Failed to complete exchange request");
-                mException = AuthorizationException.fromTemplate(
+                throw AuthorizationException.fromTemplate(
                         GeneralErrors.NETWORK_ERROR, ex);
             } catch (JSONException ex) {
                 Logger.debugWithStack(ex, "Failed to complete exchange request");
-                mException = AuthorizationException.fromTemplate(
+                throw AuthorizationException.fromTemplate(
                         GeneralErrors.JSON_DESERIALIZATION_ERROR, ex);
             } finally {
                 Utils.closeQuietly(is);
             }
-            return null;
         }
 
-        @Override
-        protected void onPostExecute(JSONObject json) {
-            if (mException != null) {
-                mCallback.onTokenRequestCompleted(null, mException);
-                return;
-            }
+        private TokenResponse parseToken(JSONObject json) throws AuthorizationException {
 
             if (json.has(AuthorizationException.PARAM_ERROR)) {
-                AuthorizationException ex;
                 try {
                     String error = json.getString(AuthorizationException.PARAM_ERROR);
-                    ex = AuthorizationException.fromOAuthTemplate(
-                            TokenRequestErrors.byString(error),
-                            error,
-                            json.optString(AuthorizationException.PARAM_ERROR_DESCRIPTION, null),
-                            UriUtil.parseUriIfAvailable(
-                                    json.optString(AuthorizationException.PARAM_ERROR_URI)));
+                    throw AuthorizationException.fromOAuthTemplate(
+                        TokenRequestErrors.byString(error),
+                        error,
+                        json.optString(AuthorizationException.PARAM_ERROR_DESCRIPTION, null),
+                        UriUtil.parseUriIfAvailable(
+                            json.optString(AuthorizationException.PARAM_ERROR_URI)));
                 } catch (JSONException jsonEx) {
-                    ex = AuthorizationException.fromTemplate(
-                            GeneralErrors.JSON_DESERIALIZATION_ERROR,
-                            jsonEx);
+                    throw AuthorizationException.fromTemplate(
+                        GeneralErrors.JSON_DESERIALIZATION_ERROR,
+                        jsonEx);
                 }
-                mCallback.onTokenRequestCompleted(null, ex);
-                return;
             }
 
             TokenResponse response;
+
             try {
                 response = new TokenResponse.Builder(mRequest).fromResponseJson(json).build();
-            } catch (JSONException jsonEx) {
-                mCallback.onTokenRequestCompleted(null,
-                        AuthorizationException.fromTemplate(
-                                GeneralErrors.JSON_DESERIALIZATION_ERROR,
-                                jsonEx));
-                return;
+            } catch (JSONException ex) {
+                throw AuthorizationException.fromTemplate(
+                    GeneralErrors.JSON_DESERIALIZATION_ERROR,
+                    ex);
             }
 
             if (response.idToken != null) {
-                IdToken idToken;
                 try {
-                    idToken = IdToken.from(response.idToken);
-                } catch (IdTokenException | JSONException ex) {
-                    mCallback.onTokenRequestCompleted(null,
-                            AuthorizationException.fromTemplate(
-                                    GeneralErrors.ID_TOKEN_PARSING_ERROR,
-                                    ex));
-                    return;
-                }
-
-                try {
+                    IdToken idToken = IdToken.from(response.idToken);
                     idToken.validate(mRequest, mClock);
-                } catch (AuthorizationException ex) {
-                    mCallback.onTokenRequestCompleted(null, ex);
-                    return;
+                } catch (IdTokenException | JSONException ex) {
+                    throw AuthorizationException.fromTemplate(
+                        GeneralErrors.ID_TOKEN_PARSING_ERROR,
+                        ex);
                 }
             }
+
             Logger.debug("Token exchange with %s completed",
                     mRequest.configuration.tokenEndpoint);
-            mCallback.onTokenRequestCompleted(response, null);
+            return response;
         }
 
         /**

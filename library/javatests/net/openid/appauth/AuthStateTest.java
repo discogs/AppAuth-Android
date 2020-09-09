@@ -54,15 +54,6 @@ public class AuthStateTest {
     private static final Long TWO_MINUTES = 120000L;
 
     private TestClock mClock;
-    /**
-     *
-     */
-    private Executor mExecutor = new Executor() {
-        @Override
-        public void execute(Runnable runnable) {
-            runnable.run();
-        }
-    };
 
     @Before
     public void setUp() {
@@ -424,13 +415,21 @@ public class AuthStateTest {
                 .build();
         TokenResponse tokenResp = getTestAuthCodeExchangeResponse();
         AuthState state = new AuthState(authResp, tokenResp, null);
-        state.setTokenRefreshExecutor(mExecutor);
 
         AuthorizationService service = mock(AuthorizationService.class);
         AuthState.AuthStateAction action = mock(AuthState.AuthStateAction.class);
 
         // at this point in time, the access token will not be considered to be expired
         mClock.currentTime.set(ONE_SECOND);
+
+        // Directly invoke the action
+        state.setTokenRefreshExecutor(new Executor() {
+            @Override
+            public void execute(Runnable runnable) {
+                runnable.run();
+            }
+        });
+
         state.performActionWithFreshTokens(
                 service,
                 NoClientAuthentication.INSTANCE,

@@ -332,7 +332,7 @@ public class TokenActivity extends AppCompatActivity {
         mStateManager.getCurrent().performActionWithFreshTokens(mAuthService, this::fetchUserInfo);
     }
 
-    @MainThread
+    @WorkerThread
     private void fetchUserInfo(String accessToken, String idToken, AuthorizationException ex) {
         if (ex != null) {
             Log.e(TAG, "Token refresh failed when fetching user info");
