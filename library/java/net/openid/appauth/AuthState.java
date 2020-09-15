@@ -79,6 +79,8 @@ public class AuthState {
     @Nullable
     private AuthorizationException mAuthorizationException;
 
+    private List<AuthStateListener> mListeners = new ArrayList<AuthStateListener>();
+
     private final Object mPendingActionsSyncObject = new Object();
     private Executor mTokenRefreshExecutor = AsyncTask.THREAD_POOL_EXECUTOR;
     private List<AuthStateAction> mPendingActions;
@@ -429,6 +431,7 @@ public class AuthState {
             if (authException.type == AuthorizationException.TYPE_OAUTH_TOKEN_ERROR) {
                 mAuthorizationException = authException;
             }
+            notifyUpdateFailure(authException);
             return;
         }
 
@@ -439,6 +442,8 @@ public class AuthState {
         if (tokenResponse.refreshToken != null) {
             mRefreshToken = tokenResponse.refreshToken;
         }
+
+        notifyUpdate();
     }
 
     /**
@@ -751,6 +756,22 @@ public class AuthState {
         return jsonDeserialize(new JSONObject(jsonStr));
     }
 
+    private void notifyUpdate() {
+        for (AuthStateListener listener : mListeners) {
+            listener.authStateDidUpdate(this);
+        }
+    }
+
+    private void notifyUpdateFailure(AuthorizationException ex) {
+        for (AuthStateListener listener : mListeners) {
+            listener.authStateDidFailToUpdate(ex);
+        }
+    }
+
+    public void addUpdateListener(AuthStateListener listener) {
+        mListeners.add(listener);
+    }
+
     /**
      * Interface for actions executed in the context of fresh (non-expired) tokens.
      * @see #performActionWithFreshTokens(AuthorizationService, AuthStateAction)
@@ -766,6 +787,22 @@ public class AuthState {
                 @Nullable String accessToken,
                 @Nullable String idToken,
                 @Nullable AuthorizationException ex);
+    }
+
+    /**
+     * Interface for listening to AuthState updates.
+     * @see #addUpdateListener(AuthStateListener)
+     */
+    public abstract static class AuthStateListener {
+        /**
+         * Executed in the context of a successful Auth State update.
+         */
+        public abstract void authStateDidUpdate(@NonNull AuthState state);
+
+        /**
+         * Executed in the context of a Auth State update failure.
+         */
+        public void authStateDidFailToUpdate(AuthorizationException ex) { }
     }
 
     /**
