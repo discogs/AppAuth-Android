@@ -50,6 +50,7 @@ import java.io.OutputStreamWriter;
 import java.net.HttpURLConnection;
 import java.net.URLConnection;
 import java.util.Map;
+import java.util.concurrent.Executor;
 
 
 /**
@@ -304,7 +305,19 @@ public class AuthorizationService {
     public void performTokenRequest(
             @NonNull TokenRequest request,
             @NonNull TokenResponseCallback callback) {
-        performTokenRequest(request, NoClientAuthentication.INSTANCE, callback);
+        performTokenRequest(request, AsyncTask.THREAD_POOL_EXECUTOR, callback);
+    }
+
+    /**
+     * Sends a request to the authorization service to exchange a code granted as part of an
+     * authorization request for a token. The result of this request will be sent to the provided
+     * callback handler.
+     */
+    public void performTokenRequest(
+            @NonNull TokenRequest request,
+            @NonNull Executor executor,
+            @NonNull TokenResponseCallback callback) {
+        performTokenRequest(request, NoClientAuthentication.INSTANCE, executor, callback);
     }
 
     /**
@@ -316,16 +329,32 @@ public class AuthorizationService {
             @NonNull TokenRequest request,
             @NonNull ClientAuthentication clientAuthentication,
             @NonNull TokenResponseCallback callback) {
+        performTokenRequest(request,
+                clientAuthentication,
+                AsyncTask.THREAD_POOL_EXECUTOR,
+                callback);
+    }
+
+    /**
+     * Sends a request to the authorization service to exchange a code granted as part of an
+     * authorization request for a token. The result of this request will be sent to the provided
+     * callback handler.
+     */
+    public void performTokenRequest(
+            @NonNull TokenRequest request,
+            @NonNull ClientAuthentication clientAuthentication,
+            @NonNull Executor executor,
+            @NonNull TokenResponseCallback callback) {
         checkNotDisposed();
         Logger.debug("Initiating code exchange request to %s",
                 request.configuration.tokenEndpoint);
         new TokenRequestTask(
-                request,
-                clientAuthentication,
-                mClientConfiguration.getConnectionBuilder(),
-                SystemClock.INSTANCE,
-                callback)
-                .execute();
+            request,
+            clientAuthentication,
+            mClientConfiguration.getConnectionBuilder(),
+            SystemClock.INSTANCE,
+            callback)
+            .executeOnExecutor(executor);
     }
 
     /**
@@ -339,10 +368,10 @@ public class AuthorizationService {
         Logger.debug("Initiating dynamic client registration %s",
                 request.configuration.registrationEndpoint.toString());
         new RegistrationRequestTask(
-                request,
-                mClientConfiguration.getConnectionBuilder(),
-                callback)
-                .execute();
+            request,
+            mClientConfiguration.getConnectionBuilder(),
+            callback)
+            .execute();
     }
 
     /**
@@ -394,15 +423,13 @@ public class AuthorizationService {
     }
 
     private static class TokenRequestTask
-            extends AsyncTask<Void, Void, JSONObject> {
+            extends AsyncTask<Void, Void, Void> {
 
         private TokenRequest mRequest;
         private ClientAuthentication mClientAuthentication;
         private final ConnectionBuilder mConnectionBuilder;
         private TokenResponseCallback mCallback;
         private Clock mClock;
-
-        private AuthorizationException mException;
 
         TokenRequestTask(TokenRequest request,
                          @NonNull ClientAuthentication clientAuthentication,
@@ -417,7 +444,18 @@ public class AuthorizationService {
         }
 
         @Override
-        protected JSONObject doInBackground(Void... voids) {
+        protected Void doInBackground(Void... voids) {
+            try {
+                JSONObject json = fetchToken();
+                TokenResponse response = parseToken(json);
+                mCallback.onTokenRequestCompleted(response, null);
+            } catch (AuthorizationException ex) {
+                mCallback.onTokenRequestCompleted(null, ex);
+            }
+            return null;
+        }
+
+        private JSONObject fetchToken() throws AuthorizationException {
             InputStream is = null;
             try {
                 HttpURLConnection conn = mConnectionBuilder.openConnection(
@@ -459,77 +497,59 @@ public class AuthorizationService {
                 return new JSONObject(response);
             } catch (IOException ex) {
                 Logger.debugWithStack(ex, "Failed to complete exchange request");
-                mException = AuthorizationException.fromTemplate(
+                throw AuthorizationException.fromTemplate(
                         GeneralErrors.NETWORK_ERROR, ex);
             } catch (JSONException ex) {
                 Logger.debugWithStack(ex, "Failed to complete exchange request");
-                mException = AuthorizationException.fromTemplate(
+                throw AuthorizationException.fromTemplate(
                         GeneralErrors.JSON_DESERIALIZATION_ERROR, ex);
             } finally {
                 Utils.closeQuietly(is);
             }
-            return null;
         }
 
-        @Override
-        protected void onPostExecute(JSONObject json) {
-            if (mException != null) {
-                mCallback.onTokenRequestCompleted(null, mException);
-                return;
-            }
+        private TokenResponse parseToken(JSONObject json) throws AuthorizationException {
 
             if (json.has(AuthorizationException.PARAM_ERROR)) {
-                AuthorizationException ex;
                 try {
                     String error = json.getString(AuthorizationException.PARAM_ERROR);
-                    ex = AuthorizationException.fromOAuthTemplate(
-                            TokenRequestErrors.byString(error),
-                            error,
-                            json.optString(AuthorizationException.PARAM_ERROR_DESCRIPTION, null),
-                            UriUtil.parseUriIfAvailable(
-                                    json.optString(AuthorizationException.PARAM_ERROR_URI)));
+                    throw AuthorizationException.fromOAuthTemplate(
+                        TokenRequestErrors.byString(error),
+                        error,
+                        json.optString(AuthorizationException.PARAM_ERROR_DESCRIPTION, null),
+                        UriUtil.parseUriIfAvailable(
+                            json.optString(AuthorizationException.PARAM_ERROR_URI)));
                 } catch (JSONException jsonEx) {
-                    ex = AuthorizationException.fromTemplate(
-                            GeneralErrors.JSON_DESERIALIZATION_ERROR,
-                            jsonEx);
+                    throw AuthorizationException.fromTemplate(
+                        GeneralErrors.JSON_DESERIALIZATION_ERROR,
+                        jsonEx);
                 }
-                mCallback.onTokenRequestCompleted(null, ex);
-                return;
             }
 
             TokenResponse response;
+
             try {
                 response = new TokenResponse.Builder(mRequest).fromResponseJson(json).build();
-            } catch (JSONException jsonEx) {
-                mCallback.onTokenRequestCompleted(null,
-                        AuthorizationException.fromTemplate(
-                                GeneralErrors.JSON_DESERIALIZATION_ERROR,
-                                jsonEx));
-                return;
+            } catch (JSONException ex) {
+                throw AuthorizationException.fromTemplate(
+                    GeneralErrors.JSON_DESERIALIZATION_ERROR,
+                    ex);
             }
 
             if (response.idToken != null) {
-                IdToken idToken;
                 try {
-                    idToken = IdToken.from(response.idToken);
-                } catch (IdTokenException | JSONException ex) {
-                    mCallback.onTokenRequestCompleted(null,
-                            AuthorizationException.fromTemplate(
-                                    GeneralErrors.ID_TOKEN_PARSING_ERROR,
-                                    ex));
-                    return;
-                }
-
-                try {
+                    IdToken idToken = IdToken.from(response.idToken);
                     idToken.validate(mRequest, mClock);
-                } catch (AuthorizationException ex) {
-                    mCallback.onTokenRequestCompleted(null, ex);
-                    return;
+                } catch (IdTokenException | JSONException ex) {
+                    throw AuthorizationException.fromTemplate(
+                        GeneralErrors.ID_TOKEN_PARSING_ERROR,
+                        ex);
                 }
             }
+
             Logger.debug("Token exchange with %s completed",
                     mRequest.configuration.tokenEndpoint);
-            mCallback.onTokenRequestCompleted(response, null);
+            return response;
         }
 
         /**
